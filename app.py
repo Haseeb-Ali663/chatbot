@@ -1,0 +1,83 @@
+import os
+from dotenv import dotenv_values
+import streamlit as st
+from groq import Groq
+
+def parse_groq_stream(stream):
+    for chunk in stream:
+        if chunk.choices and chunk.choices[0].delta.content:
+            yield chunk.choices[0].delta.content
+
+# ─── Load secrets ────────────────────────────
+try:
+    secrets = dotenv_values(".env")
+except:
+    secrets = st.secrets
+
+os.environ["GROQ_API_KEY"] = secrets["GROQ_API_KEY"]
+INITIAL_RESPONSE = secrets.get("INITIAL_RESPONSE", "Hello! im Haseeb, your AI assistant. How can I help you today?")
+INITIAL_MSG = secrets.get("INITIAL_MSG", "I’m ready to help.")
+CHAT_CONTEXT = (
+    "your name is Haseeb, "
+    "You are an expert professional assistant. "
+    "Write in concise, polite, and authoritative language. "
+    "Provide well‑structured, actionable, and accurate responses. "
+    "Maintain a tone of respect and competence, using active voice and clear sentences. "
+    "When appropriate, organize replies with headings or bullet points. "
+    "In uncertain cases, acknowledge limits and suggest next steps."
+)
+
+client = Groq()
+
+# ─── Streamlit UI setup ─────────────────────
+st.set_page_config(page_title="Haseeb chatbot", layout="centered")
+st.title("Haseeb chatbot")
+
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = [
+        {"role": "assistant", "content": INITIAL_RESPONSE}
+    ]
+
+# Display the full conversation
+for msg in st.session_state.chat_history:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
+
+user_prompt = st.chat_input("Your message:")
+
+if user_prompt:
+    # Show user message
+    with st.chat_message("user"):
+        st.markdown(user_prompt)
+    st.session_state.chat_history.append({"role": "user", "content": user_prompt})
+
+    # Prepare system + history
+    messages = [
+        {"role": "system", "content": CHAT_CONTEXT},
+        {"role": "assistant", "content": INITIAL_MSG},
+        *st.session_state.chat_history
+    ]
+
+    try:
+        stream = client.chat.completions.create(
+            model="llama-3.1-8b-instant",  # adjust as per your model access
+            messages=messages,
+            temperature=0.3,
+            max_tokens=500,
+            top_p=0.9,
+            stream=True
+        )
+        # Display assistant message streaming
+        with st.chat_message("assistant"):
+            response = st.write_stream(parse_groq_stream(stream))
+        st.session_state.chat_history.append({"role": "assistant", "content": response})
+    except Exception as e:
+        st.error(f"⚠️ Error from Groq API: {e}")
+
+if st.button("Clear Chat"):
+    st.session_state.chat_history = [
+        {"role": "assistant", "content": INITIAL_RESPONSE}
+    ]
+    st.rerun()
+
+    st.experimental_rerun() 
